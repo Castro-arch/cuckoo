@@ -39,23 +39,65 @@ Calendly / Cal.com. CalDAV-native and EU-first. Built in public.
 - Tests: Vitest for unit/integration, Playwright for end-to-end.
 - Every significant technical decision gets an ADR in `docs/adr/NNNN-title.md` (context, decision, consequences).
 - Code, comments, commit messages and docs in English.
-- Do not add a dependency without a one-line justification in the PR/commit body.
+- Do not add a dependency without a one-line justification (included in the proposed commit message).
 - Prefer boring, well-maintained libraries. No premature abstractions.
+
+## Git policy (strict)
+The maintainer makes every commit and push himself. Claude Code never does.
+- NEVER run `git commit`, `git push`, `git merge`, `git rebase`, `git reset`, `git tag`,
+  `git stash` or any other command that writes history or touches the remote.
+- Read-only git is fine: `git status`, `git diff`, `git log`, `git show`, `git blame`.
+- Never stage files (`git add`). The maintainer reviews the diff and stages himself.
+- At the end of each coherent step, STOP and hand over a commit proposal:
+  1. The list of files to stage.
+  2. The exact commands, ready to paste (`git add <paths>` then `git commit -F -` or `-m`).
+  3. A Conventional Commit message: imperative subject <= 72 chars with scope
+     (e.g. `feat(core): add slot engine`), a body explaining WHAT and WHY,
+     and a `Dependencies:` list justifying each new package.
+- No `Co-Authored-By` or any AI attribution in commit messages.
+- One logical change per commit. Split unrelated changes into separate proposals.
+
+## Engineering standard
+Work at the level of a senior engineer at a big tech company.
+- Design before code: state the problem, constraints, options with trade-offs, and the choice.
+- Small, reviewable changes. Each one builds, passes lint, typecheck and tests on its own.
+- Tests are part of the change: unit tests for logic, integration tests for boundaries,
+  edge cases and failure paths covered, no test that only asserts the happy path.
+- Explicit error handling: typed errors, no swallowed exceptions, actionable messages.
+- Security by default: validate all input, least privilege, no secrets in code or logs.
+- Observability: structured logs with context, health checks, meaningful error codes.
+- Performance awareness: note complexity and query cost when they matter; avoid N+1.
+- Naming and structure that read without comments; comments explain WHY, not WHAT.
+- Public APIs and modules documented; non-obvious decisions get an ADR.
+- When unsure about requirements, ask instead of guessing.
 
 ## Workflow for Claude Code
 - For any non-trivial task: plan first, show the plan, wait for approval, then implement.
 - Write or update tests in the same change as the code.
-- Run lint, typecheck and tests before declaring a task done.
-- Commit at each coherent step with a Conventional Commit message.
+- Run lint, typecheck and tests before declaring a step done, and report the results.
+- End every step with the commit proposal described in the Git policy, then wait.
 - If a rule above needs to change, propose an ADR instead of silently breaking it.
 
 ## Commands
-<!-- Fill in as the project grows -->
+Requires Node >= 24 (`.nvmrc`), pnpm 12 and Docker.
 - `pnpm install`
-- `docker compose up -d db redis`
-- `pnpm dev`
-- `pnpm test`
+- `cp .env.example .env` (set `POSTGRES_PORT` / `REDIS_PORT` and the URLs if 5432/6379 are taken)
+- `docker compose up -d --wait db redis`   PostgreSQL 16 + Redis 7
+- `pnpm dev`        web :3000, api :3001, worker health :3002 (watch mode, all apps)
+- `pnpm build`      build every package and app
+- `pnpm test`       Vitest in every workspace that has tests
 - `pnpm lint && pnpm typecheck`
+- `pnpm format` / `pnpm format:check`   Prettier (Markdown is excluded)
+- Single workspace: `pnpm --filter @cuckoo/<name> <script>` (e.g. `pnpm --filter @cuckoo/core test:watch`)
+
+Health endpoints: `GET http://localhost:3000/api/health`, `GET http://localhost:3001/health`,
+`GET http://localhost:3002/health` (503 when Redis is down).
+
+Notes:
+- Internal packages compile to `dist/`; Turbo builds dependencies first (`^build`).
+- The api and worker load `../../.env` with `node --env-file-if-exists`. Turbo runs in strict
+  env mode: a new runtime env var must be added to `passThroughEnv` in `turbo.json`.
+- Install scripts are opt-in via `allowBuilds` in `pnpm-workspace.yaml`.
 
 ## Current phase: Phase 1 (MVP)
 In scope:
