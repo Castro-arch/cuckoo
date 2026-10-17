@@ -28,9 +28,15 @@ Calendly / Cal.com. CalDAV-native and EU-first. Built in public.
   Sync, reminders and emails go through BullMQ.
 - Jobs are idempotent: deterministic `jobId` (e.g. `reminder:<bookingId>:<offset>`); rescheduling removes old jobs.
 - Provider credentials (OAuth tokens, CalDAV passwords) are encrypted at rest (AES-256-GCM, key from env) and never logged.
-- The slot engine in `packages/core` is a pure function:
-  (schedule, date overrides, event type, busy intervals, range, now) -> available slots.
-  It must have exhaustive unit tests, including DST transitions and owner/guest in different timezones.
+- The slot engine in `packages/core` is a pure function, `getAvailableSlots`:
+  (schedule, date overrides, event type, busy intervals, event type bookings, range, now) -> available slots (UTC).
+  `eventTypeBookings` are the existing bookings of that event type and only count toward its daily limit.
+  It must have exhaustive unit tests, including DST transitions and owner/guest in different timezones,
+  plus property-based tests (fast-check) for its invariants.
+- Buffer contract: the engine applies only the buffers of the event type being booked. Callers must pass
+  each existing booking as a busy interval already expanded by its own event type's buffers.
+  Buffers are not part of the stored booking range (ADR-0002).
+- Slot queries cover at most `MAX_SLOT_RANGE_DAYS` (62) days; longer ranges are rejected with a RangeError.
 
 ## Conventions
 - TypeScript strict mode, ESM everywhere.
