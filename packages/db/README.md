@@ -36,6 +36,18 @@ Error codes the API should map:
 
 Drizzle wraps driver errors in `DrizzleQueryError`; the `pg` error is in `.cause`.
 
+## Ownership and auth tables
+- Every owned row carries `owner_id`. Composite foreign keys (`(x_id, owner_id)`) make it
+  impossible for an event type, booking or calendar to reference another owner's schedule,
+  event type or connection.
+- Configuration (schedules, event types, connections, sessions) is deleted with its user.
+  Bookings are not: deleting a user with bookings fails (`23503`) until the account-deletion
+  flow has cancelled them and notified guests.
+- Auth tables follow Better Auth's models (ADR-0004). `sessions.token_hash` holds a SHA-256
+  hash, never the raw token; `verifications.identifier` is hashed by Better Auth.
+- `deleteExpiredAuthRecords(db)` removes expired sessions and verifications; the worker runs it
+  on a schedule.
+
 ## Migrations
 - Change `src/schema.ts`, then `pnpm db:generate --name=<what_changed>` and review the SQL.
 - Things Drizzle cannot model (extensions, exclusion constraints) go in a custom migration:
