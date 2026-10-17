@@ -1,0 +1,44 @@
+version: 2
+
+updates:
+  # GitHub Actions in .github/workflows. Actions are pinned to commit SHAs with a version
+  # comment; Dependabot updates both.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    cooldown:
+      default-days: 3
+    groups:
+      actions-minor-and-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: ci
+      include: scope
+
+  # npm ecosystem = the pnpm workspace (one shared pnpm-lock.yaml at the root).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    # Releases younger than pnpm's minimumReleaseAge fail `pnpm install --frozen-lockfile` in CI.
+    cooldown:
+      default-days: 3
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+    ignore:
+      # Majors blocked on purpose; see the dependency notes in the commits that pinned them.
+      - dependency-name: '@types/node'
+        update-types: [version-update:semver-major] # tracks .nvmrc (Node 24)
+      - dependency-name: typescript
+        update-types: [version-update:semver-major] # typescript-eslint supports < 6.1
+      - dependency-name: eslint
+        update-types: [version-update:semver-major] # eslint-config-next plugins support ESLint 9
+      - dependency-name: '@eslint/js'
+        update-types: [version-update:semver-major] # must match eslint
+    commit-message:
+      prefix: chore
+      include: scope
