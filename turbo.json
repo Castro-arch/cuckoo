@@ -1,13 +1,26 @@
 {
   "$schema": "https://turborepo.com/schema.json",
   "ui": "stream",
+  "globalDependencies": [".env"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
+      "env": ["NEXT_PUBLIC_*"],
       "outputs": ["dist/**", ".next/**", "!.next/cache/**"]
     },
     "dev": {
       "dependsOn": ["^build"],
+      "passThroughEnv": [
+        "NODE_ENV",
+        "DATABASE_URL",
+        "REDIS_URL",
+        "API_HOST",
+        "API_PORT",
+        "WORKER_HOST",
+        "WORKER_PORT",
+        "ENCRYPTION_KEY",
+        "NEXT_PUBLIC_*"
+      ],
       "cache": false,
       "persistent": true
     },
