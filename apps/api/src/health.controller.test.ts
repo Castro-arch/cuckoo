@@ -1,16 +1,19 @@
 import 'reflect-metadata';
-import type { INestApplication } from '@nestjs/common';
+import { Module, type INestApplication } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { healthResponseSchema } from '@cuckoo/shared';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { AppModule } from './app.module.js';
+import { HealthController } from './health.controller.js';
 
-describe('api', () => {
+@Module({ controllers: [HealthController] })
+class HealthTestModule {}
+
+describe('HealthController', () => {
   let app: INestApplication;
   let baseUrl: string;
 
   beforeAll(async () => {
-    app = await NestFactory.create(AppModule, { logger: false });
+    app = await NestFactory.create(HealthTestModule, { logger: false });
     await app.listen(0, '127.0.0.1');
     baseUrl = await app.getUrl();
   });

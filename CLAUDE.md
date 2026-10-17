@@ -95,7 +95,7 @@ Requires Node >= 24 (`.nvmrc`), pnpm 12 and Docker.
 - `pnpm dev`        web :3000, api :3001, worker health :3002 (watch mode, all apps)
 - `pnpm build`      build every package and app
 - `pnpm test`       Vitest unit tests in every workspace (no services needed)
-- `pnpm test:integration`   tests against real Postgres (needs `db` running; each run uses a throwaway `cuckoo_test_*` database)
+- `pnpm test:integration`   tests against real Postgres and Redis (needs `db` and `redis` running; each run uses a throwaway `cuckoo_test_*` database and namespaced Redis keys)
 - `pnpm db:generate --name=<change>`   generate a migration from `packages/db/src/schema.ts` (`--custom` for hand-written SQL)
 - `pnpm db:migrate`   apply migrations to `DATABASE_URL` (never use `drizzle-kit push` on shared DBs)
 - `pnpm lint && pnpm typecheck`

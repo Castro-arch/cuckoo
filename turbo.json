@@ -19,6 +19,13 @@
         "WORKER_HOST",
         "WORKER_PORT",
         "ENCRYPTION_KEY",
+        "APP_URL",
+        "AUTH_RATE_LIMIT",
+        "BETTER_AUTH_SECRET",
+        "BETTER_AUTH_TELEMETRY",
+        "ENCRYPTION_KEY_VERSION",
+        "GOOGLE_CLIENT_ID",
+        "GOOGLE_CLIENT_SECRET",
         "NEXT_PUBLIC_*"
       ],
       "cache": false,
@@ -30,7 +37,7 @@
     },
     "test:integration": {
       "dependsOn": ["^build"],
-      "passThroughEnv": ["DATABASE_URL", "TEST_DATABASE_URL"],
+      "passThroughEnv": ["DATABASE_URL", "TEST_DATABASE_URL", "REDIS_URL", "TEST_REDIS_URL"],
       "cache": false
     },
     "lint": {
