@@ -1,6 +1,6 @@
 # ADR-0002: Drizzle ORM and the Temporal API (via temporal-polyfill)
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-10-16
 
 ## Context
@@ -63,29 +63,55 @@ a typed column and raw SQL fragments compose with the typed builder.
    - `pg` over `postgres.js`: the most widely used Postgres driver for Node, the one Drizzle
      documents first, and the same family BullMQ 6's optional Postgres backend uses.
 2. **Bookings range modelling:** store `start_at` and `end_at` as `timestamptz` columns and
-   derive `during tstzrange GENERATED ALWAYS AS (tstzrange(start_at, end_at, '[)')) STORED`.
-   The exclusion constraint is on the generated range:
+   derive the range from them:
    ```sql
+   during tstzrange GENERATED ALWAYS AS (tstzrange(start_at, end_at, '[)')) STORED,
+   CONSTRAINT bookings_valid_range CHECK (end_at > start_at)
+   -- custom migration:
    CREATE EXTENSION IF NOT EXISTS btree_gist;
-   ALTER TABLE bookings ADD CONSTRAINT bookings_valid_range CHECK (end_at > start_at);
    ALTER TABLE bookings ADD CONSTRAINT bookings_no_overlap
      EXCLUDE USING gist (owner_id WITH =, during WITH &&)
      WHERE (status <> 'cancelled');
    ```
-   Application code reads and writes two plain typed `Date` columns. The range exists for the
-   constraint and for overlap queries (`sql` fragments on `during`), so there is no custom
-   range parsing in the hot path. A `tstzrange` `customType` is provided for queries that need
-   it. This satisfies the domain rule: booking time is a `tstzrange` under an `EXCLUDE USING
-   gist` constraint, and `[start, end)` cannot drift from the range because Postgres computes it.
-   Verified on PostgreSQL 16: overlaps for the same owner are rejected; back-to-back bookings,
-   other owners and cancelled bookings are allowed.
+   - The range is always half-open, `'[)'`: a booking ending at 10:00 and one starting at
+     10:00 do not overlap, so back-to-back bookings never conflict.
+   - `CHECK (end_at > start_at)` rejects zero-length bookings (`23514`, constraint
+     `bookings_valid_range`). A reversed booking (`end_at < start_at`) is already rejected by
+     the `tstzrange` constructor before the CHECK runs (`22000`, "range lower bound must be
+     less than or equal to range upper bound"). Both are rejected; the API validates the order
+     with Zod first so users never see either error.
+   - Application code reads and writes two plain typed `Date` columns. The range exists for
+     the constraint and for overlap queries (`sql` fragments on `during`), so there is no custom
+     range parsing in the hot path. This satisfies the domain rule: booking time is a
+     `tstzrange` under an `EXCLUDE USING gist` constraint, and the range cannot drift from
+     `start_at`/`end_at` because Postgres computes it.
+   - The exclusion constraint's GiST index on `(owner_id, during)` also serves overlap queries
+     scoped to an owner, so no separate index is needed for them.
+
+   **Buffers are not part of the stored range.** Event-type buffers (before/after) are
+   enforced by the slot engine, not by the database. Trade-off:
+   - For: the stored range is exactly the meeting, the true fact. Buffers are a per-event-type
+     policy that can change after a booking exists; baking them into the constrained range
+     would freeze one buffer semantics into the schema and require rewriting rows when an
+     owner edits their event types. External calendar busy times (Google, CalDAV) are never
+     in this constraint either, so the slot engine is the place where availability is
+     decided anyway.
+   - Against: the database guarantees no overlapping meetings, but not respected buffers. Two
+     concurrent requests could each pass the slot check and create bookings that do not
+     overlap but violate a buffer between them. The booking flow must therefore re-check
+     availability inside the insert transaction, serialized per owner (e.g. a transaction-level
+     advisory lock); that is decided when the booking flow is built.
 3. **Constraints Drizzle cannot model** (extensions, exclusion constraints, partial GiST
    indexes) live in custom migrations created with `drizzle-kit generate --custom`, with a
    comment pointing to this ADR. Integration tests assert they exist and reject overlaps.
-4. **Date library: the Temporal API, imported explicitly from `temporal-polyfill`**
-   (`import { Temporal } from 'temporal-polyfill'`), never from the global. Every runtime
-   (Node 24, Safari, Vitest) then runs the same implementation, which keeps DST tests
+4. **Date library: the Temporal API from `temporal-polyfill`**, never from the global, so every
+   runtime (Node 24, Safari, Vitest) runs the same implementation and DST tests stay
    deterministic. Luxon is not used.
+   - `temporal-polyfill` is a dependency of `packages/core` only, and is imported in exactly one
+     module, `packages/core/src/temporal.ts`, which re-exports `Temporal`.
+   - Everything else, inside core and in other packages, imports `Temporal` from that module
+     (`@cuckoo/core`), never from `temporal-polyfill` directly. An ESLint
+     `no-restricted-imports` rule enforces this when the module is added.
 5. **Boundary rule:** `packages/db` speaks `Date` (what `pg` returns for `timestamptz`).
    Conversion to `Temporal.Instant` happens at the edge of `packages/core`
    (`Temporal.Instant.fromEpochMilliseconds(date.getTime())`); core never sees `Date`.
@@ -97,9 +123,11 @@ a typed column and raw SQL fragments compose with the typed builder.
 - `drizzle-kit push` must not be used against shared or production databases; only
   `generate` + `migrate`. Documented in `packages/db/README.md`.
 - An upgrade to Drizzle 1.0 is expected soon and is tracked as a follow-up.
-- Every package that does date math depends on `temporal-polyfill`. When the Node baseline is
-  26+ and stable Safari ships Temporal, a later ADR can switch to the global and drop the
-  dependency; the explicit import makes that a search-and-replace.
+- Buffer correctness depends on application code (slot engine + transactional re-check), not
+  on the database. The booking-flow tests must cover concurrent bookings around a buffer.
+- Only `packages/core` depends on `temporal-polyfill`. When the Node baseline is 26+ and stable
+  Safari ships Temporal, a later ADR can switch to the native global by changing one file,
+  `packages/core/src/temporal.ts`, and dropping the dependency.
 - Team members unfamiliar with Temporal face a learning curve; it is offset by MDN
   documentation and by Temporal being the platform's future date API.
 - Reversibility: the schema is plain SQL migrations, so moving off Drizzle later would not
