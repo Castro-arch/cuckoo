@@ -1,11 +1,13 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import { Temporal } from '../temporal.js';
+import { referenceSlots } from '../../test/reference-slots.js';
 import { getAvailableSlots } from './get-available-slots.js';
 import type {
   DateOverride,
   EventTypeRules,
   Interval,
+  Slot,
   SlotQuery,
   TimeRange,
   Weekday,
@@ -40,7 +42,7 @@ function plainTime(minutes: number): Temporal.PlainTime {
     : Temporal.PlainTime.from({ hour: Math.floor(minutes / 60), minute: minutes % 60 });
 }
 
-const timeRangeArb: fc.Arbitrary<TimeRange> = fc
+const partOfDayArb: fc.Arbitrary<TimeRange> = fc
   .tuple(fc.integer({ min: 0, max: 95 }), fc.integer({ min: 1, max: 48 }))
   .map(([startQuarter, lengthQuarters]) => {
     const start = startQuarter * 15;
@@ -50,9 +52,15 @@ const timeRangeArb: fc.Arbitrary<TimeRange> = fc
     };
   });
 
+// Whole days chain into around-the-clock availability, which exercises the grid anchoring.
+const timeRangeArb: fc.Arbitrary<TimeRange> = fc.oneof(
+  { arbitrary: partOfDayArb, weight: 4 },
+  { arbitrary: fc.constant({ start: MIDNIGHT, end: MIDNIGHT }), weight: 1 },
+);
+
 const rangesArb = fc.array(timeRangeArb, { maxLength: 3 });
 
-const weeklyArb = fc
+const randomWeeklyArb = fc
   .array(fc.option(rangesArb, { nil: undefined }), { minLength: 7, maxLength: 7 })
   .map((perDay) => {
     const weekly: Partial<Record<Weekday, readonly TimeRange[]>> = {};
@@ -62,14 +70,32 @@ const weeklyArb = fc
     return weekly;
   });
 
+// Around the clock every day: availability that never starts, where grid anchoring matters most.
+const aroundTheClock = [{ start: MIDNIGHT, end: MIDNIGHT }];
+const aroundTheClockWeekly: Partial<Record<Weekday, readonly TimeRange[]>> = {
+  1: aroundTheClock,
+  2: aroundTheClock,
+  3: aroundTheClock,
+  4: aroundTheClock,
+  5: aroundTheClock,
+  6: aroundTheClock,
+  7: aroundTheClock,
+};
+
+const weeklyArb = fc.oneof(
+  { arbitrary: randomWeeklyArb, weight: 3 },
+  { arbitrary: fc.constant(aroundTheClockWeekly), weight: 1 },
+);
+
 const eventTypeArb: fc.Arbitrary<EventTypeRules> = fc
   .record({
-    durationMinutes: fc.constantFrom(15, 30, 45, 60, 90),
+    // 45 and 50 do not divide a day, so a wrongly anchored grid shows up.
+    durationMinutes: fc.constantFrom(15, 30, 45, 50, 60, 90),
     bufferBeforeMinutes: fc.integer({ min: 0, max: 12 }).map((n) => n * 5),
     bufferAfterMinutes: fc.integer({ min: 0, max: 12 }).map((n) => n * 5),
     minimumNoticeMinutes: fc.integer({ min: 0, max: 48 }).map((n) => n * 30),
     dailyLimit: fc.option(fc.integer({ min: 1, max: 3 }), { nil: null }),
-    slotIntervalMinutes: fc.option(fc.constantFrom(15, 30, 60), { nil: undefined }),
+    slotIntervalMinutes: fc.option(fc.constantFrom(15, 30, 45, 50, 60), { nil: undefined }),
   })
   .map(({ slotIntervalMinutes, ...rules }) =>
     slotIntervalMinutes === undefined ? rules : { ...rules, slotIntervalMinutes },
@@ -81,47 +107,53 @@ const intervalSpecArb = fc.record({
 });
 type IntervalSpec = { offsetMinutes: number; lengthMinutes: number };
 
-const queryArb: fc.Arbitrary<SlotQuery> = fc
-  .record({
-    timeZone: fc.constantFrom(...ZONES),
-    anchor: fc.constantFrom(...ANCHORS),
-    startOffsetHours: fc.integer({ min: 0, max: 72 }),
-    lengthHours: fc.integer({ min: 1, max: 10 * 24 }),
-    weekly: weeklyArb,
-    overrides: fc.uniqueArray(
-      fc.record({ dayOffset: fc.integer({ min: -1, max: 12 }), ranges: rangesArb }),
-      { selector: (override) => override.dayOffset, maxLength: 4 },
-    ),
-    eventType: eventTypeArb,
-    busy: fc.array(intervalSpecArb, { maxLength: 8 }),
-    bookings: fc.array(intervalSpecArb, { maxLength: 6 }),
-    nowOffsetMinutes: fc.integer({ min: -3 * 24 * 60, max: 3 * 24 * 60 }),
-  })
-  .map((spec) => {
-    const anchor = Temporal.PlainDate.from(spec.anchor);
-    const rangeStart = anchor
-      .toZonedDateTime(spec.timeZone)
-      .toInstant()
-      .add({ hours: spec.startOffsetHours });
-    const toInterval = ({ offsetMinutes, lengthMinutes }: IntervalSpec): Interval => {
-      const start = rangeStart.add({ minutes: offsetMinutes });
-      return { start, end: start.add({ minutes: lengthMinutes }) };
-    };
-    const overrides: DateOverride[] = spec.overrides.map(({ dayOffset, ranges }) => ({
-      date: anchor.add({ days: dayOffset }),
-      ranges,
-    }));
+function makeQueryArb(maxRangeHours: number): fc.Arbitrary<SlotQuery> {
+  return fc
+    .record({
+      timeZone: fc.constantFrom(...ZONES),
+      anchor: fc.constantFrom(...ANCHORS),
+      startOffsetHours: fc.integer({ min: 0, max: 72 }),
+      lengthHours: fc.integer({ min: 1, max: maxRangeHours }),
+      weekly: weeklyArb,
+      overrides: fc.uniqueArray(
+        fc.record({ dayOffset: fc.integer({ min: -1, max: 12 }), ranges: rangesArb }),
+        { selector: (override) => override.dayOffset, maxLength: 4 },
+      ),
+      eventType: eventTypeArb,
+      busy: fc.array(intervalSpecArb, { maxLength: 8 }),
+      bookings: fc.array(intervalSpecArb, { maxLength: 6 }),
+      nowOffsetMinutes: fc.integer({ min: -3 * 24 * 60, max: 3 * 24 * 60 }),
+    })
+    .map((spec) => {
+      const anchor = Temporal.PlainDate.from(spec.anchor);
+      const rangeStart = anchor
+        .toZonedDateTime(spec.timeZone)
+        .toInstant()
+        .add({ hours: spec.startOffsetHours });
+      const toInterval = ({ offsetMinutes, lengthMinutes }: IntervalSpec): Interval => {
+        const start = rangeStart.add({ minutes: offsetMinutes });
+        return { start, end: start.add({ minutes: lengthMinutes }) };
+      };
+      const overrides: DateOverride[] = spec.overrides.map(({ dayOffset, ranges }) => ({
+        date: anchor.add({ days: dayOffset }),
+        ranges,
+      }));
 
-    return {
-      schedule: { timeZone: spec.timeZone, weekly: spec.weekly },
-      overrides,
-      eventType: spec.eventType,
-      busy: spec.busy.map(toInterval),
-      eventTypeBookings: spec.bookings.map(toInterval),
-      range: { start: rangeStart, end: rangeStart.add({ hours: spec.lengthHours }) },
-      now: rangeStart.add({ minutes: spec.nowOffsetMinutes }),
-    };
-  });
+      return {
+        schedule: { timeZone: spec.timeZone, weekly: spec.weekly },
+        overrides,
+        eventType: spec.eventType,
+        busy: spec.busy.map(toInterval),
+        eventTypeBookings: spec.bookings.map(toInterval),
+        range: { start: rangeStart, end: rangeStart.add({ hours: spec.lengthHours }) },
+        now: rangeStart.add({ minutes: spec.nowOffsetMinutes }),
+      };
+    });
+}
+
+const queryArb = makeQueryArb(10 * 24);
+// The minute-by-minute oracle is slow, so it gets short ranges.
+const smallQueryArb = makeQueryArb(36);
 
 const ms = (instant: Temporal.Instant) => instant.epochMilliseconds;
 
@@ -239,4 +271,47 @@ describe('getAvailableSlots properties', () => {
       RUNS,
     );
   });
+
+  it('returns exactly the slots of the naive minute-by-minute reference', () => {
+    fc.assert(
+      fc.property(smallQueryArb, (query) => {
+        expect(asMs(getAvailableSlots(query))).toEqual(asMs(referenceSlots(query)));
+      }),
+      { numRuns: 100 },
+    );
+  });
+
+  it('returns the same slots in the intersection of two overlapping ranges', () => {
+    const extensionHours = fc.integer({ min: 0, max: 4 * 24 });
+    fc.assert(
+      fc.property(
+        queryArb,
+        fc.tuple(extensionHours, extensionHours, extensionHours, extensionHours),
+        (query, [before1, after1, before2, after2]) => {
+          // Both ranges contain query.range; their intersection is at least that.
+          const rangeA = {
+            start: query.range.start.subtract({ hours: before1 }),
+            end: query.range.end.add({ hours: after1 }),
+          };
+          const rangeB = {
+            start: query.range.start.subtract({ hours: before2 }),
+            end: query.range.end.add({ hours: after2 }),
+          };
+          const from = Math.max(ms(rangeA.start), ms(rangeB.start));
+          const to = Math.min(ms(rangeA.end), ms(rangeB.end));
+          const inIntersection = (slots: Slot[]) =>
+            asMs(slots).filter(([start]) => from <= start && start < to);
+
+          expect(inIntersection(getAvailableSlots({ ...query, range: rangeA }))).toEqual(
+            inIntersection(getAvailableSlots({ ...query, range: rangeB })),
+          );
+        },
+      ),
+      RUNS,
+    );
+  });
 });
+
+function asMs(slots: Slot[]): Array<[number, number]> {
+  return slots.map((slot) => [ms(slot.start), ms(slot.end)]);
+}

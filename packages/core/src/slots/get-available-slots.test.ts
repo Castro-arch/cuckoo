@@ -512,6 +512,29 @@ describe('midnight', () => {
     const wednesday = getAvailableSlots(query({ range: days(BERLIN, '2026-10-21'), schedule }));
     expect(local(wednesday, BERLIN)).toEqual(['2026-10-21T00:30+02:00']);
   });
+
+  it('restarts the grid at midnight for around-the-clock availability, whatever the range', () => {
+    const allDay = [hours('00:00', '00:00')];
+    const schedule = {
+      timeZone: BERLIN,
+      weekly: { 1: allDay, 2: allDay, 3: allDay, 4: allDay, 5: allDay, 6: allDay, 7: allDay },
+    };
+    // 50 minutes does not divide a day, so a grid carried over from earlier days would drift.
+    const eventType = { ...ONE_HOUR, durationMinutes: 50 };
+
+    const wednesdayOnly = getAvailableSlots(
+      query({ range: days(BERLIN, '2026-10-21'), schedule, eventType }),
+    );
+    const wholeWeek = getAvailableSlots(
+      query({ range: days(BERLIN, '2026-10-19', '2026-10-25'), schedule, eventType }),
+    );
+
+    const wednesday = local(wednesdayOnly, BERLIN);
+    expect(wednesday).toHaveLength(29);
+    expect(wednesday[0]).toBe('2026-10-21T00:00+02:00');
+    expect(wednesday.at(-1)).toBe('2026-10-21T23:20+02:00');
+    expect(local(wholeWeek, BERLIN).filter((s) => s.startsWith('2026-10-21'))).toEqual(wednesday);
+  });
 });
 
 describe('validation', () => {
@@ -573,6 +596,7 @@ describe('validation', () => {
   it.each<[string, Partial<EventTypeRules>]>([
     ['a zero duration', { durationMinutes: 0 }],
     ['a fractional duration', { durationMinutes: 1.5 }],
+    ['a duration over 24 hours', { durationMinutes: 24 * 60 + 1 }],
     ['a negative buffer', { bufferBeforeMinutes: -5 }],
     ['a negative minimum notice', { minimumNoticeMinutes: -1 }],
     ['a zero daily limit', { dailyLimit: 0 }],
