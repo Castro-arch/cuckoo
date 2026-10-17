@@ -1,5 +1,7 @@
 # Cuckoo
 
+[![CI](https://github.com/Castro-arch/cuckoo/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Castro-arch/cuckoo/actions/workflows/ci.yml)
+
 Open-source scheduling that will never close its code.
 A self-hostable alternative to Calendly and Cal.com: CalDAV-native, EU-first, AGPL-3.0.
 
