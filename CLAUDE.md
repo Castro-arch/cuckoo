@@ -15,7 +15,7 @@ Calendly / Cal.com. CalDAV-native and EU-first. Built in public.
 - `apps/api`     NestJS REST API. Auth, business rules, slot calculation, bookings. OpenAPI generated.
 - `apps/worker`  BullMQ consumers: calendar sync, reminders, emails.
 - `packages/core`   Pure domain logic (slot engine, timezone helpers). NO framework or DB imports.
-- `packages/db`     Schema, migrations and DB client (ORM decided in ADR-0002).
+- `packages/db`     Schema, migrations and DB client: Drizzle ORM + pg (ADR-0002).
 - `packages/shared` Zod schemas and types shared by web, api and worker.
 - `packages/config` Shared tsconfig / eslint / prettier.
 - `docker-compose.yml` PostgreSQL 16 + Redis 7 (+ apps in production mode).
@@ -85,7 +85,10 @@ Requires Node >= 24 (`.nvmrc`), pnpm 12 and Docker.
 - `docker compose up -d --wait db redis`   PostgreSQL 16 + Redis 7
 - `pnpm dev`        web :3000, api :3001, worker health :3002 (watch mode, all apps)
 - `pnpm build`      build every package and app
-- `pnpm test`       Vitest in every workspace that has tests
+- `pnpm test`       Vitest unit tests in every workspace (no services needed)
+- `pnpm test:integration`   tests against real Postgres (needs `db` running; each run uses a throwaway `cuckoo_test_*` database)
+- `pnpm db:generate --name=<change>`   generate a migration from `packages/db/src/schema.ts` (`--custom` for hand-written SQL)
+- `pnpm db:migrate`   apply migrations to `DATABASE_URL` (never use `drizzle-kit push` on shared DBs)
 - `pnpm lint && pnpm typecheck`
 - `pnpm format` / `pnpm format:check`   Prettier (Markdown is excluded)
 - Single workspace: `pnpm --filter @cuckoo/<name> <script>` (e.g. `pnpm --filter @cuckoo/core test:watch`)
@@ -98,6 +101,8 @@ Notes:
 - The api and worker load `../../.env` with `node --env-file-if-exists`. Turbo runs in strict
   env mode: a new runtime env var must be added to `passThroughEnv` in `turbo.json`.
 - Install scripts are opt-in via `allowBuilds` in `pnpm-workspace.yaml`.
+- Dates: `Temporal` comes from `packages/core`'s single re-export of `temporal-polyfill`;
+  never import the polyfill or the global elsewhere (ADR-0002).
 
 ## Current phase: Phase 1 (MVP)
 In scope:
