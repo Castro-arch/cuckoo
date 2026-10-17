@@ -5,6 +5,7 @@ build/
 .next/
 .turbo/
 coverage/
+*.tsbuildinfo
 playwright-report/
 test-results/
 .env
