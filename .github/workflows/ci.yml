@@ -62,7 +62,7 @@ jobs:
         run: pnpm test
 
   integration:
-    name: Integration tests (PostgreSQL 16)
+    name: Integration tests (PostgreSQL 16, Redis 7)
     needs: checks
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -80,9 +80,20 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       # Throwaway CI credentials; each run creates and drops its own cuckoo_test_* database.
       TEST_DATABASE_URL: postgresql://cuckoo:cuckoo@localhost:5432/cuckoo
+      # API tests namespace their Redis keys and queues per run.
+      TEST_REDIS_URL: redis://localhost:6379
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
