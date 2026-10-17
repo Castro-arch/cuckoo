@@ -1,3 +1,12 @@
 packages:
   - apps/*
   - packages/*
+
+# Install scripts are opt-in. Both packages below work without theirs:
+# - msgpackr-extract: optional native accelerator for BullMQ's msgpackr;
+#   the pure-JS fallback is used.
+# - unrs-resolver (via eslint-config-next): native bindings ship as
+#   prebuilt optional dependencies; the script only re-checks them.
+allowBuilds:
+  msgpackr-extract: false
+  unrs-resolver: false
