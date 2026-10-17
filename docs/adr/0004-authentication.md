@@ -68,6 +68,16 @@ same flows.
    OWASP parameters), rather than relying on undocumented default scrypt parameters.
 6. **Email verification required** before a session is created. Verification and reset emails
    are enqueued to BullMQ from Better Auth's send callbacks; the request never waits on SMTP.
+   - **Encrypted payloads**: the whole message (recipient, name, verification or reset link) is
+     encrypted with AES-256-GCM using `ENCRYPTION_KEY` / `ENCRYPTION_KEY_VERSION`, bound to the
+     label `cuckoo:email-job:v1`. Job data holds only `{ keyVersion, ciphertext }`; only the
+     worker decrypts, and the decrypted payload is never logged.
+   - **Short-lived jobs**: `removeOnComplete: true`, `removeOnFail: { age: 3600 }` (5 attempts with
+     exponential backoff first).
+   - **Per-recipient limits** in Redis (keyed by a SHA-256 of the address, never the address
+     itself), so the forms cannot be used to flood someone's inbox: "someone tried to sign up with
+     your email" at most 1 per address per 24 h; reset and verification emails at most 3 per
+     address per hour. A suppressed email changes nothing in the response.
 7. **Rate limiting in Redis**, so limits hold across API instances, through Better Auth's
    `rateLimit.customStorage` with an atomic `consume` (one Lua script: `INCR` + `EXPIRE`).
    Stricter rules on sign-in, sign-up and password reset; `trustedProxies` configured for
@@ -134,9 +144,12 @@ same flows.
 - The session-hashing wrapper depends on Better Auth's internal call patterns. Every Better Auth
   upgrade must pass the auth integration tests, which assert that only hashes are stored and that
   sign-in, refresh, sign-out and "sign out other devices" still work.
-- Email jobs carry verification and reset links, so these secrets sit in Redis until the job
-  runs. Jobs are removed on completion and failed jobs expire quickly; encrypting job payloads
-  is to be decided when the email worker is built.
+- Email jobs carry verification and reset links, but only encrypted, and only until the worker
+  handles them (or one hour after the final failure). Someone with Redis access alone cannot read
+  them; with Redis and the encryption key, they could, so the key is kept out of Redis and logs.
+- Better Auth creates the reset token before calling our send callback, so a suppressed reset
+  email still leaves an unused, hashed token behind; it expires after an hour and the cleanup
+  job deletes it.
 - Tests also cover: stripping Google tokens on create and update, and email normalization to
   lowercase.
 - Switching away later means re-implementing the flows but not migrating identities: users,
