@@ -26,13 +26,16 @@ Calendly / Cal.com. CalDAV-native and EU-first. Built in public.
   scoped to the owner and ignoring cancelled bookings. Double booking must be impossible at the DB level.
 - The API never waits on external providers inside a user request (except OAuth callbacks).
   Sync, reminders and emails go through BullMQ.
-- Jobs are idempotent: deterministic `jobId` (e.g. `reminder:<bookingId>:<offset>`); rescheduling removes old jobs.
+- Jobs are idempotent: deterministic `jobId` (e.g. `reminder-<bookingId>-<offset>`); rescheduling removes old jobs.
+  Use `-` as the separator: BullMQ rejects `:` in custom job IDs (ADR-0003).
 - Provider credentials (OAuth tokens, CalDAV passwords) are encrypted at rest (AES-256-GCM, key from env) and never logged.
 - The slot engine in `packages/core` is a pure function, `getAvailableSlots`:
   (schedule, date overrides, event type, busy intervals, event type bookings, range, now) -> available slots (UTC).
   `eventTypeBookings` are the existing bookings of that event type and only count toward its daily limit.
   It must have exhaustive unit tests, including DST transitions and owner/guest in different timezones,
-  plus property-based tests (fast-check) for its invariants.
+  plus property-based tests (fast-check) for its invariants. It must return exactly what the naive
+  reference in `packages/core/test/reference-slots.ts` returns; change both together when a rule changes.
+- Slot results never depend on the requested range: the grid anchor comes from the schedule only (ADR-0003).
 - Buffer contract: the engine applies only the buffers of the event type being booked. Callers must pass
   each existing booking as a busy interval already expanded by its own event type's buffers.
   Buffers are not part of the stored booking range (ADR-0002).
