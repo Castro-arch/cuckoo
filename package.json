@@ -11,8 +11,11 @@
     "dev": "turbo run dev",
     "build": "turbo run build",
     "test": "turbo run test",
+    "test:integration": "turbo run test:integration",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
+    "db:generate": "pnpm --filter @cuckoo/db db:generate",
+    "db:migrate": "pnpm --filter @cuckoo/db db:migrate",
     "format": "prettier --write .",
     "format:check": "prettier --check ."
   },

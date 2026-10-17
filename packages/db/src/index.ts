@@ -1,4 +1,4 @@
-// Placeholder until ADR-0002 picks the ORM / query layer.
-// Schema, migrations (including the btree_gist booking EXCLUDE constraint)
-// and the DB client will live in this package.
-export {};
+export { createDatabase, type Database, type DatabaseHandle } from './client.js';
+export { migrationsFolder, runMigrations } from './migrate.js';
+export * from './schema.js';
+export { rangeOverlaps } from './sql.js';

@@ -7,3 +7,5 @@ coverage
 next-env.d.ts
 # Markdown is hand-formatted (aligned lists in CLAUDE.md).
 *.md
+# drizzle-kit snapshots and journal (generated).
+packages/db/drizzle/meta
