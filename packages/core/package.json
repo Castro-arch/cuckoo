@@ -20,10 +20,10 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "fast-check": "^4.10.2",
-    "vitest": "^5.0.5"
+    "fast-check": "^4.10.3",
+    "vitest": "^5.1.1"
   },
   "dependencies": {
-    "temporal-polyfill": "^1.0.6"
+    "temporal-polyfill": "^1.0.8"
   }
 }
